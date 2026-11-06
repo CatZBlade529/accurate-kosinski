@@ -1,0 +1,62 @@
+name: CMake Multi-Platform Build & Artifacts
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }} (${{ matrix.build_type }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Release]
+
+    steps:
+    # 1. Check out the repository source code
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+
+    # 2. Configure CMake and specify an explicit install prefix directory
+    - name: Configure CMake
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+
+    # 3. Compile the project binaries
+    - name: Build Project
+      run: cmake --build ${{ github.workspace }}/build --config ${{ matrix.build_type }}
+
+    # 4. Install binaries and assets cleanly into the staging folder
+    - name: Install Binaries
+      run: cmake --install ${{ github.workspace }}/build --config ${{ matrix.build_type }}
+
+    # 5. Compress the installed staging folder into a platform-specific ZIP/Tarball
+    - name: Package Artifacts (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        Compress-Archive -Path "${{ github.workspace }}/install/*" -DestinationPath "${{ github.workspace }}/build-artifact-windows.zip"
+
+    - name: Package Artifacts (Linux & macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cd ${{ github.workspace }}/install
+        tar -czvf ${{ github.workspace }}/build-artifact-${{ matrix.os }}.tar.gz .
+
+    # 6. Upload packaged files to GitHub Action Artifacts storage
+    - name: Upload Packaged Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: binary-archive-${{ matrix.os }}
+        path: |
+          ${{ github.workspace }}/build-artifact-*.zip
+          ${{ github.workspace }}/build-artifact-*.tar.gz
+        retention-days: 5
+
